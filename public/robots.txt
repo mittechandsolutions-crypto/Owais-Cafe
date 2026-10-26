@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://mittechandsolutions-crypto.github.io/owais-cafe/sitemap.xml
