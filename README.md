@@ -26,7 +26,7 @@ This project is configured to deploy automatically to GitHub Pages. Push the pro
 
 For the account `mittechandsolutions-crypto` and repository `owais-cafe`, the free website address will be:
 
-`https://mittechandsolutions-crypto.github.io/owais-cafe/`
+`https://mittechandsolutions-crypto.github.io/Owais-Cafe/`
 
 The `/account/` page and site assets are built to work under this project URL. A paid custom domain is not required. Google may take days or weeks to index a new site, and appearing in search results is not guaranteed; after deployment, the owner can use Google Search Console for free to request indexing.
 
