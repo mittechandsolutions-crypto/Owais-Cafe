@@ -29,9 +29,9 @@ export const menuItems = [
 ]
 
 export const signatures = [
-  { title: 'The Grilled Beef', subtitle: 'The one Daska talks about.', price: '₨ 650', image: 'hero-burger.webp', alt: 'Signature grilled beef burger stacked with fresh toppings', tag: 'THE LOCAL LEGEND' },
-  { title: 'Beef Wrap', subtitle: 'Big flavour, wrapped right.', price: '₨ 580', image: 'beef-wrap.webp', alt: 'Grilled beef wrap sliced and ready to serve', tag: 'WRAP YOUR DAY' },
-  { title: 'Smoky BBQ Platter', subtitle: 'Gather round the grill.', price: '₨ 1,850', image: 'bbq-platter.webp', alt: 'Smoky mixed barbecue platter served hot', tag: 'STRAIGHT FROM THE FIRE' },
+  { itemId: 'beef-grilled', title: 'The Grilled Beef', subtitle: 'The one Daska talks about.', price: '₨ 650', image: 'hero-burger.webp', alt: 'Signature grilled beef burger stacked with fresh toppings', tag: 'THE LOCAL LEGEND' },
+  { itemId: 'beef-wrap', title: 'Beef Wrap', subtitle: 'Big flavour, wrapped right.', price: '₨ 580', image: 'beef-wrap.webp', alt: 'Grilled beef wrap sliced and ready to serve', tag: 'WRAP YOUR DAY' },
+  { itemId: 'bbq-platter', title: 'Smoky BBQ Platter', subtitle: 'Gather round the grill.', price: '₨ 1,850', image: 'bbq-platter.webp', alt: 'Smoky mixed barbecue platter served hot', tag: 'STRAIGHT FROM THE FIRE' },
 ]
 
 export const reviews = [

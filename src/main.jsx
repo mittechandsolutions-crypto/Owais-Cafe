@@ -1,11 +1,13 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { AnimatePresence, animate, motion, useInView, useMotionValue, useSpring, useTransform } from 'framer-motion'
-import { ArrowDown, ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Clock3, Flame, Instagram, MapPin, Menu as MenuIcon, Navigation, Phone, Star, Truck, Utensils, UserRound, X } from 'lucide-react'
+import { ArrowDown, ArrowRight, ArrowUpRight, Check, ChevronLeft, ChevronRight, Clock3, Flame, Instagram, MapPin, Menu as MenuIcon, Minus, Navigation, Phone, Plus, ShoppingBag, Star, Truck, Utensils, UserRound, X } from 'lucide-react'
 import { business, galleryImages, menuCategories, menuItems, reviews, signatures, whatsappLink } from './data'
-import AccountPage from './Account'
+import { fetchMenuItems, isSupabaseConfigured, getSupabaseClient } from './supabase'
 import './style.css'
 
+const AccountPage = lazy(() => import('./Account'))
+const AdminPage = lazy(() => import('./Admin'))
 const imagePath = (name) => `${import.meta.env.BASE_URL}images/${name}`
 const sitePath = (path = '') => `${import.meta.env.BASE_URL}${path}`
 const fadeUp = {
@@ -131,7 +133,7 @@ function Marquee() {
   return <div className="marquee" aria-label="Grill, burgers, wraps, fast food, open till 2 AM"><div className="marquee-track">{Array.from({ length: 4 }, (_, index) => <span key={index}>{text}</span>)}</div></div>
 }
 
-function Signatures() {
+function Signatures({ items }) {
   const container = useRef(null)
   useEffect(() => {
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -150,20 +152,103 @@ function Signatures() {
     <div className="section-inner">
       <SectionTitle eyebrow="THE ONES YOU COME BACK FOR" note="Sourced fresh. Seasoned with love. Finished over real flame.">House<br className="mobile-break" /> signatures<span className="orange">.</span></SectionTitle>
       <div className="signature-grid">
-        {signatures.map((dish, index) => <motion.article key={dish.title} className={`signature-card signature-card-${index + 1}`} whileHover={{ y: -8, rotateX: 2, rotateY: index === 1 ? -2 : 2 }} transition={{ type: 'spring', stiffness: 250, damping: 20 }}>
+        {signatures.flatMap((dish, index) => {
+          const item = items.find((entry) => entry.id === dish.itemId)
+          if (!item) return []
+          return <motion.article key={dish.title} className={`signature-card signature-card-${index + 1}`} whileHover={{ y: -8, rotateX: 2, rotateY: index === 1 ? -2 : 2 }} transition={{ type: 'spring', stiffness: 250, damping: 20 }}>
           <div className="signature-image"><img src={imagePath(dish.image)} alt={dish.alt} width="720" height="820" loading="lazy" /><span className="dish-number">0{index + 1}</span><span className="dish-tag">{dish.tag}</span></div>
-          <div className="signature-info"><div><h3>{dish.title}</h3><p>{dish.subtitle}</p></div><span>{dish.price}</span></div>
-        </motion.article>)}
+          <div className="signature-info"><div><h3>{item.name}</h3><p>{dish.subtitle}</p></div><span>₨ {Number(item.price).toLocaleString('en-PK')}</span></div>
+        </motion.article>
+        })}
       </div>
       <div className="center-cta"><a className="text-link" href="#menu">MEET THE WHOLE MENU <ArrowRight size={16} /></a></div>
     </div>
   </section>
 }
 
-function Menu() {
+function OrderCheckout({ items, cart, onSetQuantity, onClose, onSubmitted }) {
+  const [values, setValues] = useState({ name: '', phone: '', fulfillment: 'pickup', address: '', notes: '' })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [submitted, setSubmitted] = useState(null)
+  const cartItems = items.filter((item) => cart[item.id]).map((item) => ({ ...item, quantity: cart[item.id] }))
+  const estimate = cartItems.reduce((total, item) => total + Number(item.price) * item.quantity, 0)
+  const update = (event) => setValues((current) => ({ ...current, [event.target.name]: event.target.value }))
+
+  const submit = async (event) => {
+    event.preventDefault()
+    setError('')
+    setBusy(true)
+    try {
+      const client = await getSupabaseClient()
+      const { data, error: orderError } = await client.rpc('place_order', {
+        p_customer_name: values.name.trim(),
+        p_phone: values.phone.trim(),
+        p_fulfillment: values.fulfillment,
+        p_delivery_address: values.address.trim(),
+        p_notes: values.notes.trim(),
+        p_items: cartItems.map((item) => ({ menu_item_id: item.id, quantity: item.quantity })),
+      })
+      if (orderError) throw orderError
+      setSubmitted(data)
+      onSubmitted()
+    } catch (submitError) {
+      setError(submitError.message || 'Your order could not be saved. Please try again or order by WhatsApp.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const whatsappMessage = submitted
+    ? `Hi Owais Cafe! I placed website order ${submitted.order_number}. Name: ${values.name}. Phone: ${values.phone}. Total: PKR ${Number(submitted.total).toLocaleString('en-PK')}. Please confirm my order.`
+    : `Hi Owais Cafe! I'd like to order: ${cartItems.map((item) => `${item.quantity} x ${item.name}`).join(', ')}. My name is ${values.name || '[your name]'} and my phone number is ${values.phone || '[your phone]'}.`
+
+  return <motion.div className="checkout-backdrop" role="dialog" aria-modal="true" aria-labelledby="checkout-title" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+    <motion.section className="checkout-panel" initial={{ y: 22, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 22, opacity: 0 }} onClick={(event) => event.stopPropagation()}>
+      <button className="modal-close" aria-label="Close order form" onClick={onClose}><X size={20} /></button>
+      {submitted ? <>
+        <span className="account-eyebrow"><i /> ORDER SAVED</span>
+        <h2 id="checkout-title">Thanks, {values.name.split(' ')[0]}.</h2>
+        <p>Your order <strong>{submitted.order_number}</strong> has been sent to Owais Cafe. Total: <strong>₨ {Number(submitted.total).toLocaleString('en-PK')}</strong>.</p>
+        <p>To contact the cafe and confirm, continue to WhatsApp.</p>
+        <a className="button button-orange" href={whatsappLink(whatsappMessage)} target="_blank" rel="noreferrer">Continue on WhatsApp <ArrowUpRight size={16} /></a>
+        <button className="text-button checkout-done" onClick={onClose}>Close</button>
+      </> : <>
+        <span className="account-eyebrow"><i /> FRESH OFF THE GRILL</span>
+        <h2 id="checkout-title">Place your order<span>.</span></h2>
+        <div className="checkout-items">{cartItems.map((item) => <div className="checkout-item" key={item.id}>
+          <span><strong>{item.name}</strong><small>₨ {Number(item.price).toLocaleString('en-PK')} each</small></span>
+          <div><button aria-label={`Remove one ${item.name}`} onClick={() => onSetQuantity(item.id, item.quantity - 1)}><Minus size={14} /></button><strong>{item.quantity}</strong><button aria-label={`Add one ${item.name}`} onClick={() => onSetQuantity(item.id, item.quantity + 1)}><Plus size={14} /></button></div>
+        </div>)}</div>
+        <p className="checkout-total">Estimated total <strong>₨ {estimate.toLocaleString('en-PK')}</strong><small>Final total is verified using the current menu prices when your order is saved.</small></p>
+        <form className="auth-form checkout-form" onSubmit={submit}>
+          <label>Your name<input name="name" autoComplete="name" value={values.name} onChange={update} required minLength={2} maxLength={100} /></label>
+          <label>Phone number<input name="phone" autoComplete="tel" type="tel" value={values.phone} onChange={update} required minLength={6} maxLength={30} /></label>
+          <label>Order type<select name="fulfillment" value={values.fulfillment} onChange={update}><option value="pickup">Pickup</option><option value="dine-in">Dine-in</option><option value="delivery">Delivery</option></select></label>
+          {values.fulfillment === 'delivery' && <label>Delivery address<textarea name="address" value={values.address} onChange={update} required minLength={5} maxLength={300} rows={2} /></label>}
+          <label>Notes <span className="optional-label">OPTIONAL</span><textarea name="notes" value={values.notes} onChange={update} maxLength={500} rows={2} placeholder="Anything we should know?" /></label>
+          {error && <p className="auth-message auth-error" role="alert"><X size={15} />{error}</p>}
+          <button className="account-submit" type="submit" disabled={busy || !cartItems.length}>{busy ? 'SENDING ORDER...' : 'SAVE ORDER & CONTINUE'}<ArrowRight size={16} /></button>
+        </form>
+        <a className="checkout-whatsapp" href={whatsappLink(whatsappMessage)} target="_blank" rel="noreferrer">Prefer WhatsApp? Send this order directly <ArrowUpRight size={14} /></a>
+      </>}
+    </motion.section>
+  </motion.div>
+}
+
+function Menu({ items, menuError, onRefreshMenu }) {
   const [active, setActive] = useState(menuCategories[0])
   const [selected, setSelected] = useState(null)
-  const filtered = menuItems.filter((item) => item.category === active)
+  const [cart, setCart] = useState({})
+  const [checkoutOpen, setCheckoutOpen] = useState(false)
+  const filtered = items.filter((item) => item.category === active)
+  const cartCount = Object.values(cart).reduce((total, quantity) => total + quantity, 0)
+  const setQuantity = (itemId, quantity) => setCart((current) => {
+    const next = { ...current }
+    if (quantity > 0) next[itemId] = Math.min(quantity, 20)
+    else delete next[itemId]
+    return next
+  })
   useEffect(() => {
     if (!selected) return
     const onKeyDown = (event) => {
@@ -182,21 +267,24 @@ function Menu() {
         <AnimatePresence mode="popLayout">
           {filtered.map((item) => <motion.article key={item.id} className="menu-card" layout initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.25 }}>
             <button className="menu-image" onClick={() => setSelected(item)} aria-label={`View ${item.name}`}><img src={imagePath(item.image)} alt={item.alt} width="520" height="380" loading="lazy" /><span className="image-view"><ArrowUpRight size={17} /></span></button>
-            <div className="menu-card-copy"><div className="menu-name-price"><h3>{item.name}</h3><span>₨ {item.price.toLocaleString('en-PK')}</span></div><p>{item.description}</p><a href={whatsappLink(`Hi Owais Cafe! I'd like to order ${item.name}.`)} target="_blank" rel="noreferrer" className="menu-order">ORDER THIS <ArrowUpRight size={13} /></a></div>
+            <div className="menu-card-copy"><div className="menu-name-price"><h3>{item.name}</h3><span>₨ {Number(item.price).toLocaleString('en-PK')}</span></div><p>{item.description}</p><div className="menu-card-actions">{isSupabaseConfigured && <button className="menu-order" onClick={() => setQuantity(item.id, (cart[item.id] ?? 0) + 1)}><Plus size={13} /> ADD TO ORDER</button>}<a href={whatsappLink(`Hi Owais Cafe! I'd like to order ${item.name}.`)} target="_blank" rel="noreferrer" className="menu-order">WHATSAPP <ArrowUpRight size={13} /></a></div></div>
           </motion.article>)}
         </AnimatePresence>
       </motion.div>
-      <p className="menu-disclaimer">Menu items and prices are illustrative. Please confirm current availability and pricing when ordering.</p>
+      {menuError ? <p className="menu-status auth-error" role="alert">{menuError} <button className="text-button" onClick={onRefreshMenu}>Retry</button></p>
+        : <p className="menu-disclaimer">{isSupabaseConfigured ? 'Current menu prices are provided by Owais Cafe. Website orders are saved securely for the owner.' : 'Menu items and prices are illustrative. Please confirm current availability and pricing when ordering.'}</p>}
     </div>
+    {isSupabaseConfigured && cartCount > 0 && <button className="website-order-float" onClick={() => setCheckoutOpen(true)}><ShoppingBag size={18} /><span>YOUR ORDER · {cartCount}</span><strong>₨ {items.filter((item) => cart[item.id]).reduce((total, item) => total + Number(item.price) * cart[item.id], 0).toLocaleString('en-PK')}</strong></button>}
     <AnimatePresence>
       {selected && <motion.div className="dish-modal" role="dialog" aria-modal="true" aria-label={selected.name} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setSelected(null)}>
         <motion.div className="dish-modal-card" initial={{ y: 20, scale: 0.96 }} animate={{ y: 0, scale: 1 }} exit={{ y: 20, scale: 0.96 }} onClick={(event) => event.stopPropagation()}>
           <button className="modal-close" aria-label="Close item details" onClick={() => setSelected(null)}><X size={20} /></button>
           <img src={imagePath(selected.image)} alt={selected.alt} width="640" height="440" />
-          <div><span className="eyebrow"><i /> FROM OUR {selected.category.toUpperCase()}</span><h3>{selected.name}</h3><p>{selected.description}</p><div className="modal-bottom"><strong>₨ {selected.price.toLocaleString('en-PK')}</strong><OrderLink message={`Hi Owais Cafe! I'd like to order ${selected.name}.`}>Order this <ArrowUpRight size={16} /></OrderLink></div></div>
+          <div><span className="eyebrow"><i /> FROM OUR {selected.category.toUpperCase()}</span><h3>{selected.name}</h3><p>{selected.description}</p><div className="modal-bottom"><strong>₨ {Number(selected.price).toLocaleString('en-PK')}</strong><div className="modal-order-actions">{isSupabaseConfigured && <button className="button button-orange" onClick={() => { setQuantity(selected.id, (cart[selected.id] ?? 0) + 1); setSelected(null) }}>Add to order <Plus size={15} /></button>}<OrderLink message={`Hi Owais Cafe! I'd like to order ${selected.name}.`}>WhatsApp <ArrowUpRight size={16} /></OrderLink></div></div></div>
         </motion.div>
       </motion.div>}
     </AnimatePresence>
+    <AnimatePresence>{checkoutOpen && <OrderCheckout items={items} cart={cart} onSetQuantity={setQuantity} onClose={() => setCheckoutOpen(false)} onSubmitted={() => { setCart({}); onRefreshMenu() }} />}</AnimatePresence>
   </section>
 }
 
@@ -307,7 +395,7 @@ function Footer() {
   return <footer className="footer">
     <div className="section-inner">
       <div className="footer-main"><a href="#home" className="brand footer-brand"><span className="brand-icon"><Flame size={23} fill="currentColor" /></span><span className="brand-copy"><strong>OWAIS<span>.</span></strong><small>CAFE · GRILL · FAST FOOD</small></span></a><p>Real fire. Real flavour.<br />Right here in Daska.</p><OrderLink className="footer-order">Order on WhatsApp</OrderLink></div>
-      <div className="footer-bottom"><span>© {new Date().getFullYear()} OWAIS CAFE. MADE FRESH IN DASKA.</span><nav aria-label="Footer navigation"><a href="#menu">MENU</a><a href="#about">OUR STORY</a><a href="#contact">FIND US</a></nav><a className="instagram-placeholder" href="https://instagram.com/" target="_blank" rel="noreferrer" aria-label="Instagram"><Instagram size={16} /> FOLLOW ALONG</a></div>
+      <div className="footer-bottom"><span>© {new Date().getFullYear()} OWAIS CAFE. MADE FRESH IN DASKA.</span><nav aria-label="Footer navigation"><a href="#menu">MENU</a><a href="#about">OUR STORY</a><a href="#contact">FIND US</a><a href={sitePath('admin/')}>OWNER LOGIN</a></nav><a className="instagram-placeholder" href="https://instagram.com/" target="_blank" rel="noreferrer" aria-label="Instagram"><Instagram size={16} /> FOLLOW ALONG</a></div>
     </div>
   </footer>
 }
@@ -316,7 +404,21 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [progress, setProgress] = useState(0)
   const [reduceMotion, setReduceMotion] = useState(false)
+  const [items, setItems] = useState(isSupabaseConfigured ? [] : menuItems)
+  const [menuError, setMenuError] = useState('')
   const mainRef = useRef(null)
+  const loadMenu = async () => {
+    try {
+      const { data, error } = await fetchMenuItems()
+      if (error) throw error
+      setItems(data ?? [])
+      setMenuError('')
+    } catch (loadError) {
+      setItems([])
+      setMenuError(`Could not load the current menu: ${loadError.message || 'Check the Supabase setup and try again.'}`)
+    }
+  }
+  useEffect(() => { loadMenu() }, [])
   useEffect(() => {
     const media = window.matchMedia('(prefers-reduced-motion: reduce)')
     const update = () => setReduceMotion(media.matches)
@@ -360,8 +462,8 @@ function App() {
     <main ref={mainRef}>
       <Hero />
       <Marquee />
-      <Signatures />
-      <Menu />
+      <Signatures items={items} />
+      <Menu items={items} menuError={menuError} onRefreshMenu={loadMenu} />
       <About />
       <Services />
       <Gallery />
@@ -375,4 +477,13 @@ function App() {
 
 const basePath = import.meta.env.BASE_URL.replace(/\/+$/, '')
 const currentPath = window.location.pathname.replace(/\/+$/, '') || '/'
-createRoot(document.getElementById('root')).render(currentPath === `${basePath}/account` ? <AccountPage /> : <App />)
+const normalizedPath = currentPath.toLowerCase()
+createRoot(document.getElementById('root')).render(
+  <Suspense fallback={<div className="admin-loading">Loading Owais Cafe…</div>}>
+    {normalizedPath === `${basePath.toLowerCase()}/account`
+      ? <AccountPage />
+      : normalizedPath === `${basePath.toLowerCase()}/admin`
+        ? <AdminPage />
+        : <App />}
+  </Suspense>,
+)

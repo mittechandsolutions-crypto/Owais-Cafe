@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ArrowLeft, ArrowRight, Check, ChevronRight, Flame, Heart, LockKeyhole, LogOut, Mail, PackageOpen, ShieldCheck, ShoppingBag, UserRound, Utensils, X } from 'lucide-react'
 import { menuItems } from './data'
+import { fetchMenuItems, isSupabaseConfigured } from './supabase'
 
 const ACCOUNTS_KEY = 'owais-cafe-demo-accounts'
 const SESSION_KEY = 'owais-cafe-demo-session'
@@ -129,7 +130,7 @@ function AuthPage({ onSignIn }) {
   </main>
 }
 
-function AccountDashboard({ user, onUpdate, onSignOut }) {
+function AccountDashboard({ user, onUpdate, onSignOut, items, menuError }) {
   const [active, setActive] = useState('overview')
   const [toast, setToast] = useState('')
   const [profile, setProfile] = useState({ name: user.name, phone: user.phone ?? '' })
@@ -140,7 +141,7 @@ function AccountDashboard({ user, onUpdate, onSignOut }) {
     { id: 'favorites', label: 'Favourites', icon: Heart },
     { id: 'profile', label: 'Profile & security', icon: LockKeyhole },
   ]
-  const favorites = menuItems.filter((item) => (user.favorites ?? []).includes(item.id))
+  const favorites = items.filter((item) => (user.favorites ?? []).includes(item.id))
 
   const flash = (message) => {
     setToast(message)
@@ -185,22 +186,23 @@ function AccountDashboard({ user, onUpdate, onSignOut }) {
         <div className="sidebar-note"><Flame size={16} fill="currentColor" /><span>FRESH FROM THE GRILL<br /><b>OPEN TILL 2 AM</b></span></div>
       </aside>
       <section className="dashboard-content">
+        {menuError && <p className="auth-message auth-error" role="alert">{menuError}</p>}
         <motion.div key={active} className="dashboard-view" initial={{ opacity: 0, y: 13 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .22 }}>
             {active === 'overview' && <>
               <span className="account-eyebrow"><i /> YOUR CORNER OF THE CAFE</span>
               <div className="dashboard-heading-row"><div><h1>Good to see you, <span>{user.name.split(' ')[0]}.</span></h1><p>Your Owais Cafe account, all in one place.</p></div><a href={sitePath('#menu')} className="account-outline-button"><Utensils size={16} /> Explore menu</a></div>
-              <div className="account-stat-row"><article><span className="stat-icon"><ShoppingBag size={17} /></span><small>ORDERS PLACED</small><strong>0</strong><p>Orders placed in-store or on WhatsApp won’t appear here yet.</p></article><article><span className="stat-icon"><Heart size={17} /></span><small>SAVED FAVOURITES</small><strong>{user.favorites?.length ?? 0}</strong><p>Your go-to dishes are easy to find and order.</p></article></div>
+              <div className="account-stat-row"><article><span className="stat-icon"><ShoppingBag size={17} /></span><small>ORDERS PLACED</small><strong>0</strong><p>This customer demo doesn’t show order history. Website orders are available to the cafe owner.</p></article><article><span className="stat-icon"><Heart size={17} /></span><small>SAVED FAVOURITES</small><strong>{user.favorites?.length ?? 0}</strong><p>Your go-to dishes are easy to find and order.</p></article></div>
               <div className="dashboard-section-heading"><div><span className="account-eyebrow"><i /> MADE FOR YOUR NEXT CRAVING</span><h2>Your favourites</h2></div><button className="text-button arrow-link" onClick={() => setActive('favorites')}>See all <ArrowRight size={15} /></button></div>
               {favorites.length ? <div className="favorite-preview">{favorites.slice(0, 2).map((item) => <article className="favorite-row" key={item.id}><img src={sitePath(`images/${item.image}`)} alt={item.alt} /><div><strong>{item.name}</strong><small>₨ {item.price.toLocaleString('en-PK')}</small></div><a href={`https://wa.me/923177876060?text=${encodeURIComponent(`Hi Owais Cafe! I'd like to order ${item.name}.`)}`} target="_blank" rel="noreferrer" aria-label={`Order ${item.name}`}><ArrowRight size={17} /></a></article>)}</div> : <div className="dashboard-empty compact-empty"><Heart size={20} /><span>Save a dish you love and it’ll show up here.</span><button className="text-button" onClick={() => setActive('favorites')}>Browse dishes</button></div>}
-              <div className="account-disclaimer"><ShieldCheck size={16} /><span>Demo account: orders and saved details are stored only in this browser. Online ordering and real account sync are not connected.</span></div>
+              <div className="account-disclaimer"><ShieldCheck size={16} /><span>Customer account details are stored only in this browser. Website orders are managed separately by the cafe owner.</span></div>
             </>}
             {active === 'orders' && <>
               <span className="account-eyebrow"><i /> ORDER HISTORY</span><h1 className="simple-dashboard-title">My orders<span>.</span></h1>
-              <div className="dashboard-empty order-empty"><span className="empty-icon"><PackageOpen size={26} /></span><h2>No orders yet</h2><p>Orders placed by phone, in person, or through WhatsApp aren’t synced to this demo account.</p><a href={sitePath('#menu')} className="account-outline-button"><Utensils size={16} /> Explore the menu</a></div>
+              <div className="dashboard-empty order-empty"><span className="empty-icon"><PackageOpen size={26} /></span><h2>No customer order history</h2><p>This demo account is separate from ordering. Website checkout orders are visible in the cafe owner dashboard.</p><a href={sitePath('#menu')} className="account-outline-button"><Utensils size={16} /> Explore the menu</a></div>
             </>}
             {active === 'favorites' && <>
               <span className="account-eyebrow"><i /> YOUR GO-TO DISHES</span><h1 className="simple-dashboard-title">Favourites<span>.</span></h1>
-              <div className="all-favorites">{menuItems.map((item) => {
+              <div className="all-favorites">{items.map((item) => {
                 const saved = (user.favorites ?? []).includes(item.id)
                 return <article className={`favorite-card ${saved ? 'is-saved' : ''}`} key={item.id}><img src={sitePath(`images/${item.image}`)} alt={item.alt} /><div className="favorite-card-copy"><small>{item.category.toUpperCase()}</small><h2>{item.name}</h2><strong>₨ {item.price.toLocaleString('en-PK')}</strong><button className="favorite-toggle" onClick={() => toggleFavorite(item.id)} aria-label={saved ? `Remove ${item.name} from favourites` : `Add ${item.name} to favourites`} title={saved ? 'Remove from favourites' : 'Add to favourites'}><Heart size={17} fill={saved ? 'currentColor' : 'none'} /></button></div></article>
               })}</div>
@@ -220,6 +222,23 @@ function AccountDashboard({ user, onUpdate, onSignOut }) {
 
 export default function AccountPage() {
   const [user, setUser] = useState(() => readStorage(SESSION_KEY, null))
+  const [items, setItems] = useState(isSupabaseConfigured ? [] : menuItems)
+  const [menuError, setMenuError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    fetchMenuItems().then(({ data, error }) => {
+      if (!active) return
+      if (error) {
+        setMenuError(`Could not load the current menu: ${error.message}`)
+        return
+      }
+      setItems(data ?? [])
+    }).catch((error) => {
+      if (active) setMenuError(`Could not load the current menu: ${error.message || 'Please try again.'}`)
+    })
+    return () => { active = false }
+  }, [])
 
   const updateUser = (updated) => {
     setUser(updated)
@@ -233,5 +252,5 @@ export default function AccountPage() {
     setUser(null)
   }
 
-  return user ? <AccountDashboard user={user} onUpdate={updateUser} onSignOut={signOut} /> : <AuthPage onSignIn={setUser} />
+  return user ? <AccountDashboard user={user} onUpdate={updateUser} onSignOut={signOut} items={items} menuError={menuError} /> : <AuthPage onSignIn={setUser} />
 }

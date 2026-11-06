@@ -1,7 +1,9 @@
 import { copyFileSync, mkdirSync } from 'node:fs'
 
-const accountDirectory = new URL('../dist/account/', import.meta.url)
 const indexFile = new URL('../dist/index.html', import.meta.url)
 
-mkdirSync(accountDirectory, { recursive: true })
-copyFileSync(indexFile, new URL('index.html', accountDirectory))
+for (const route of ['account', 'admin']) {
+  const routeDirectory = new URL(`../dist/${route}/`, import.meta.url)
+  mkdirSync(routeDirectory, { recursive: true })
+  copyFileSync(indexFile, new URL('index.html', routeDirectory))
+}
